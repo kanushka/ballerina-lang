@@ -109,7 +109,7 @@ public class CodeCoverageUtils {
 
             }
 
-            copyClassFilesToBinPath(destination, destJarDir, orgName, moduleName, version);
+            copyClassFilesToBinPath(destination, destJarDir, moduleName, version);
             deleteDirectory(new File(destJarDir));
         } catch (NoSuchFileException e) {
             String msg = "Unable to generate code coverage for the module " + moduleName + ". Source file does not " +
@@ -121,10 +121,19 @@ public class CodeCoverageUtils {
         }
     }
 
-    public static void copyClassFilesToBinPath(Path destination, String destjarDir, String orgName, String moduleName,
+    /**
+     * Copy class files to bin path for analysis.
+     *
+     * @param destination Path
+     * @param destJarDir String
+     * @param moduleName String
+     * @param version String
+     * @throws IOException
+     */
+    public static void copyClassFilesToBinPath(Path destination, String destJarDir, String moduleName,
                                                 String version) throws IOException {
         Path binClassDirPath;
-        Path extractedJarPath = Paths.get(destjarDir);
+        Path extractedJarPath = Paths.get(destJarDir);
 
         // First we resolve the destination to where the .class files will go
         if (TesterinaConstants.DOT.equals(moduleName)) {
@@ -247,7 +256,7 @@ public class CodeCoverageUtils {
     }
 
     /**
-     * Extracts the testerina report zip from resources to a given destination.
+     * Extracts the Testerina report zip from resources to a given destination.
      *
      * @param source zip stream
      * @param target target directory
@@ -285,8 +294,8 @@ public class CodeCoverageUtils {
     /**
      * Modify Classes in CoverageBuilder to reflect ballerina source root.
      *
-     * @param classesList Collection<IClassCoverage>
-     * @return Collection<IClassCoverage>
+     * @param classesList Collection of class coverage
+     * @return Collection of class coverage
      */
     private static  Collection<IClassCoverage> modifyClasses(Collection<IClassCoverage> classesList,
                                                              Package packageInstance) {
@@ -305,11 +314,17 @@ public class CodeCoverageUtils {
         return modifiedClasses;
     }
 
-
-    private static Collection<ISourceFileCoverage> modifySourceFiles(Collection<ISourceFileCoverage> sourcefiles,
+    /**
+     * Modify source file for ballerina package.
+     *
+     * @param sourceFiles Collection of source files
+     * @param packageInstance Package
+     * @return Collection of source file coverage
+     */
+    private static Collection<ISourceFileCoverage> modifySourceFiles(Collection<ISourceFileCoverage> sourceFiles,
                                                                      Package packageInstance) {
         Collection<ISourceFileCoverage> modifiedSourceFiles = new ArrayList<>();
-        for (ISourceFileCoverage sourcefile : sourcefiles) {
+        for (ISourceFileCoverage sourcefile : sourceFiles) {
             ISourceFileCoverage modifiedSourceFile;
             List<ILine> modifiedLines;
             if (sourcefile.getName().endsWith(BLANG_SRC_FILE_SUFFIX)) {
@@ -326,6 +341,13 @@ public class CodeCoverageUtils {
         return modifiedSourceFiles;
     }
 
+    /**
+     * Normalize file name for ballerina file.
+     *
+     * @param fileName String
+     * @param packageInstance Package
+     * @return
+     */
     private static String normalizeFileName(String fileName, Package packageInstance) {
         String orgName = IdentifierUtils.encodeNonFunctionIdentifier(
                 packageInstance.packageOrg().toString());
@@ -356,6 +378,12 @@ public class CodeCoverageUtils {
         return fileName;
     }
 
+    /**
+     * Modify source file coverage to update partial coverage information.
+     *
+     * @param sourcefile ISourceFileCoverage
+     * @return List of modified lines
+     */
     private static List<ILine> modifyLines(ISourceFileCoverage sourcefile) {
         List<ILine> modifiedLines = new ArrayList<>();
         for (int i = sourcefile.getFirstLine(); i <= sourcefile.getLastLine(); i++) {
@@ -366,12 +394,29 @@ public class CodeCoverageUtils {
         return modifiedLines;
     }
 
+    /**
+     * Modify bundle coverage to update partial coverage information.
+     *
+     * @param title String
+     * @param packageInstance Package
+     * @param coverageBuilder CoverageBuilder
+     * @return IBundleCoverage
+     */
     private static IBundleCoverage getPartialCoverageModifiedBundle(String title, Package packageInstance,
                                                                     CoverageBuilder coverageBuilder) {
         return new BundleCoverageImpl(title, modifyClasses(coverageBuilder.getClasses(), packageInstance),
                 modifySourceFiles(coverageBuilder.getSourceFiles(), packageInstance));
     }
 
+    /**
+     * Create jacoco XML report for package.
+     *
+     * @param project Project
+     * @param packageExecData List of ExecutionData
+     * @param packageCoverageBuilder CoverageBuilder
+     * @param packageSessionInfo List of SessionInfo
+     * @throws IOException
+     */
     public static void createXMLReport(Project project,
                                        List<ExecutionData> packageExecData, CoverageBuilder packageCoverageBuilder,
                                        List<SessionInfo> packageSessionInfo) throws IOException {
