@@ -41,13 +41,8 @@ import org.jacoco.core.analysis.IPackageCoverage;
 import org.jacoco.core.analysis.ISourceFileCoverage;
 import org.jacoco.core.data.ExecutionData;
 import org.jacoco.core.data.SessionInfo;
-import org.jacoco.core.internal.analysis.BundleCoverageImpl;
 import org.jacoco.core.tools.ExecFileLoader;
-import org.jacoco.report.IReportVisitor;
-import org.jacoco.report.xml.XMLFormatter;
 
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -62,7 +57,6 @@ import java.util.regex.Pattern;
 import static io.ballerina.runtime.api.utils.IdentifierUtils.decodeIdentifier;
 import static org.ballerinalang.test.runtime.util.TesterinaConstants.BIN_DIR;
 import static org.ballerinalang.test.runtime.util.TesterinaConstants.BLANG_SRC_FILE_SUFFIX;
-import static org.ballerinalang.test.runtime.util.TesterinaConstants.REPORT_XML_FILE;
 import static org.jacoco.core.analysis.ICounter.FULLY_COVERED;
 import static org.jacoco.core.analysis.ICounter.NOT_COVERED;
 import static org.jacoco.core.analysis.ICounter.PARTLY_COVERED;
@@ -185,50 +179,6 @@ public class CoverageReport {
         final Analyzer analyzer = new Analyzer(execFileLoader.getExecutionDataStore(), coverageBuilder);
         analyzer.analyzeAll(classesDirectory.toFile());
         return coverageBuilder;
-    }
-
-    private IBundleCoverage getPartialCoverageModifiedBundle(CoverageBuilder coverageBuilder) {
-        return new BundleCoverageImpl(title, modifyClasses(coverageBuilder.getClasses()),
-                modifySourceFiles(coverageBuilder.getSourceFiles()));
-    }
-
-    /**
-     * Modify Classes in CoverageBuilder to reflect ballerina source root.
-     *
-     * @param classesList Collection<IClassCoverage>
-     * @return Collection<IClassCoverage>
-     */
-    private Collection<IClassCoverage> modifyClasses(Collection<IClassCoverage> classesList) {
-        Collection<IClassCoverage> modifiedClasses = new ArrayList<>();
-        for (IClassCoverage classCoverage : classesList) {
-            if (classCoverage.getSourceFileName() != null) {
-                //Normalize package name and class name for classes generated for bal files
-                IClassCoverage modifiedClassCoverage = new NormalizedCoverageClass(classCoverage,
-                        normalizeFileName(classCoverage.getPackageName()),
-                        normalizeFileName(classCoverage.getName()));
-                modifiedClasses.add(modifiedClassCoverage);
-            } else {
-                modifiedClasses.add(classCoverage);
-            }
-        }
-        return modifiedClasses;
-    }
-
-    private void createXMLReport(IBundleCoverage bundleCoverage) throws IOException {
-        XMLFormatter xmlFormatter = new XMLFormatter();
-        File reportFile = new File(target.getReportPath().resolve(
-                this.module.moduleName().toString()).resolve(REPORT_XML_FILE).toString());
-        reportFile.getParentFile().mkdirs();
-
-        try (FileOutputStream fileOutputStream = new FileOutputStream(reportFile)) {
-            IReportVisitor visitor = xmlFormatter.createVisitor(fileOutputStream);
-            visitor.visitInfo(execFileLoader.getSessionInfoStore().getInfos(),
-                    execFileLoader.getExecutionDataStore().getContents());
-
-            visitor.visitBundle(bundleCoverage, null);
-
-            visitor.visitEnd();
-        }
     }
 
     private void createReport(final IBundleCoverage bundleCoverage, Map<String, ModuleCoverage> moduleCoverageMap) {
@@ -402,25 +352,6 @@ public class CoverageReport {
         return dependencyPathList;
     }
 
-    private Collection<ISourceFileCoverage> modifySourceFiles(Collection<ISourceFileCoverage> sourcefiles) {
-        Collection<ISourceFileCoverage> modifiedSourceFiles = new ArrayList<>();
-        for (ISourceFileCoverage sourcefile : sourcefiles) {
-            ISourceFileCoverage modifiedSourceFile;
-            List<ILine> modifiedLines;
-            if (sourcefile.getName().endsWith(BLANG_SRC_FILE_SUFFIX)) {
-                modifiedLines = modifyLines(sourcefile);
-                //Normalize source file package name
-                modifiedSourceFile = new PartialCoverageModifiedSourceFile(sourcefile,
-                        modifiedLines, normalizeFileName(sourcefile.getPackageName()));
-                modifiedSourceFiles.add(modifiedSourceFile);
-            } else {
-                modifiedSourceFiles.add(sourcefile);
-            }
-
-        }
-        return modifiedSourceFiles;
-    }
-
     private String normalizeFileName(String fileName) {
         String orgName = IdentifierUtils.encodeNonFunctionIdentifier(
                 this.module.packageInstance().packageOrg().toString());
@@ -449,16 +380,6 @@ public class CoverageReport {
             }
         }
         return fileName;
-    }
-
-    private List<ILine> modifyLines(ISourceFileCoverage sourcefile) {
-        List<ILine> modifiedLines = new ArrayList<>();
-        for (int i = sourcefile.getFirstLine(); i <= sourcefile.getLastLine(); i++) {
-            ILine line = sourcefile.getLine(i);
-            ILine modifiedLine = new PartialCoverageModifiedLine(line.getInstructionCounter(), line.getBranchCounter());
-            modifiedLines.add(modifiedLine);
-        }
-        return modifiedLines;
     }
 
 }
