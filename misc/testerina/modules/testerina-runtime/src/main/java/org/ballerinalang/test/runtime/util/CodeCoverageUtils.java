@@ -17,6 +17,26 @@
  */
 package org.ballerinalang.test.runtime.util;
 
+import io.ballerina.projects.Module;
+import io.ballerina.projects.Package;
+import io.ballerina.projects.Project;
+import io.ballerina.projects.internal.model.Target;
+import io.ballerina.projects.util.ProjectConstants;
+import io.ballerina.runtime.api.utils.IdentifierUtils;
+import org.ballerinalang.test.runtime.entity.NormalizedCoverageClass;
+import org.ballerinalang.test.runtime.entity.PartialCoverageModifiedLine;
+import org.ballerinalang.test.runtime.entity.PartialCoverageModifiedSourceFile;
+import org.jacoco.core.analysis.CoverageBuilder;
+import org.jacoco.core.analysis.IBundleCoverage;
+import org.jacoco.core.analysis.IClassCoverage;
+import org.jacoco.core.analysis.ILine;
+import org.jacoco.core.analysis.ISourceFileCoverage;
+import org.jacoco.core.data.ExecutionData;
+import org.jacoco.core.data.SessionInfo;
+import org.jacoco.core.internal.analysis.BundleCoverageImpl;
+import org.jacoco.report.IReportVisitor;
+import org.jacoco.report.xml.XMLFormatter;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -28,7 +48,9 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.jar.JarEntry;
@@ -39,6 +61,9 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import static org.ballerinalang.test.runtime.util.TesterinaConstants.BLANG_SRC_FILE_SUFFIX;
+import static org.ballerinalang.test.runtime.util.TesterinaConstants.REPORT_XML_FILE;
 
 
 /**
@@ -254,6 +279,115 @@ public class CodeCoverageUtils {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Modify Classes in CoverageBuilder to reflect ballerina source root.
+     *
+     * @param classesList Collection<IClassCoverage>
+     * @return Collection<IClassCoverage>
+     */
+    private static  Collection<IClassCoverage> modifyClasses(Collection<IClassCoverage> classesList,
+                                                             Package packageInstance) {
+        Collection<IClassCoverage> modifiedClasses = new ArrayList<>();
+        for (IClassCoverage classCoverage : classesList) {
+            if (classCoverage.getSourceFileName() != null) {
+                //Normalize package name and class name for classes generated for bal files
+                IClassCoverage modifiedClassCoverage = new NormalizedCoverageClass(classCoverage,
+                        normalizeFileName(classCoverage.getPackageName(), packageInstance),
+                        normalizeFileName(classCoverage.getName(), packageInstance));
+                modifiedClasses.add(modifiedClassCoverage);
+            } else {
+                modifiedClasses.add(classCoverage);
+            }
+        }
+        return modifiedClasses;
+    }
+
+
+    private static Collection<ISourceFileCoverage> modifySourceFiles(Collection<ISourceFileCoverage> sourcefiles,
+                                                                     Package packageInstance) {
+        Collection<ISourceFileCoverage> modifiedSourceFiles = new ArrayList<>();
+        for (ISourceFileCoverage sourcefile : sourcefiles) {
+            ISourceFileCoverage modifiedSourceFile;
+            List<ILine> modifiedLines;
+            if (sourcefile.getName().endsWith(BLANG_SRC_FILE_SUFFIX)) {
+                modifiedLines = modifyLines(sourcefile);
+                //Normalize source file package name
+                modifiedSourceFile = new PartialCoverageModifiedSourceFile(sourcefile,
+                        modifiedLines, normalizeFileName(sourcefile.getPackageName(), packageInstance));
+                modifiedSourceFiles.add(modifiedSourceFile);
+            } else {
+                modifiedSourceFiles.add(sourcefile);
+            }
+
+        }
+        return modifiedSourceFiles;
+    }
+
+    private static String normalizeFileName(String fileName, Package packageInstance) {
+        String orgName = IdentifierUtils.encodeNonFunctionIdentifier(
+                packageInstance.packageOrg().toString());
+        //Get package instance and traverse through all the modules
+        for (Module module : packageInstance.modules()) {
+            String packageName = IdentifierUtils.encodeNonFunctionIdentifier(
+                    module.moduleName().toString());
+            String sourceRoot = module.project().sourceRoot().getFileName().toString();
+            if (!module.isDefaultModule()) {
+                sourceRoot = sourceRoot + "/" + ProjectConstants.MODULES_ROOT + "/" +
+                        module.moduleName().moduleNamePart();
+            }
+            if (fileName.contains(orgName + "/" + packageName + "/")) {
+                //Escape special characters before using in regex
+                orgName = Pattern.quote(orgName);
+                packageName = Pattern.quote(packageName);
+                // Capture file paths with the format "orgName/packageName/xxxx/file-name" and replace with
+                // "<source-root>/file-name"
+                String normalizedFileName = fileName.replaceAll("^" + orgName + "/" +
+                        packageName + "/.*/", sourceRoot + "/");
+                // Capture remaining file paths with the format "orgName/packageName/file-name" and replace
+                // with "<source-root>"
+                normalizedFileName = normalizedFileName.replaceAll("^" + orgName + "/" +
+                        packageName + "/.*", sourceRoot);
+                return normalizedFileName;
+            }
+        }
+        return fileName;
+    }
+
+    private static List<ILine> modifyLines(ISourceFileCoverage sourcefile) {
+        List<ILine> modifiedLines = new ArrayList<>();
+        for (int i = sourcefile.getFirstLine(); i <= sourcefile.getLastLine(); i++) {
+            ILine line = sourcefile.getLine(i);
+            ILine modifiedLine = new PartialCoverageModifiedLine(line.getInstructionCounter(), line.getBranchCounter());
+            modifiedLines.add(modifiedLine);
+        }
+        return modifiedLines;
+    }
+
+    private static IBundleCoverage getPartialCoverageModifiedBundle(String title, Package packageInstance,
+                                                                    CoverageBuilder coverageBuilder) {
+        return new BundleCoverageImpl(title, modifyClasses(coverageBuilder.getClasses(), packageInstance),
+                modifySourceFiles(coverageBuilder.getSourceFiles(), packageInstance));
+    }
+
+    public static void createXMLReport(Project project,
+                                       List<ExecutionData> packageExecData, CoverageBuilder packageCoverageBuilder,
+                                       List<SessionInfo> packageSessionInfo) throws IOException {
+        Target target = new Target(project.sourceRoot());
+        String title = target.getTestsCachePath().resolve(TesterinaConstants.COVERAGE_DIR).toFile().getName();
+        XMLFormatter xmlFormatter = new XMLFormatter();
+        File reportFile = new File(target.getReportPath().resolve(
+                project.currentPackage().packageName().value()).resolve(REPORT_XML_FILE).toString());
+        reportFile.getParentFile().mkdirs();
+
+        try (FileOutputStream fileOutputStream = new FileOutputStream(reportFile)) {
+            IReportVisitor visitor = xmlFormatter.createVisitor(fileOutputStream);
+            visitor.visitInfo(packageSessionInfo, packageExecData);
+            visitor.visitBundle(getPartialCoverageModifiedBundle(title, project.currentPackage(),
+                    packageCoverageBuilder), null);
+            visitor.visitEnd();
         }
     }
 }

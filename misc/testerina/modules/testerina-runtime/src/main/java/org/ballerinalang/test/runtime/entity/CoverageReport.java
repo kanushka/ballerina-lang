@@ -39,6 +39,8 @@ import org.jacoco.core.analysis.IClassCoverage;
 import org.jacoco.core.analysis.ILine;
 import org.jacoco.core.analysis.IPackageCoverage;
 import org.jacoco.core.analysis.ISourceFileCoverage;
+import org.jacoco.core.data.ExecutionData;
+import org.jacoco.core.data.SessionInfo;
 import org.jacoco.core.internal.analysis.BundleCoverageImpl;
 import org.jacoco.core.tools.ExecFileLoader;
 import org.jacoco.report.IReportVisitor;
@@ -97,7 +99,9 @@ public class CoverageReport {
      * @throws IOException when file operations are failed
      */
     public void generateReport(Map<String, ModuleCoverage> moduleCoverageMap,
-                               JBallerinaBackend jBallerinaBackend, String includesInCoverage)
+                               JBallerinaBackend jBallerinaBackend, String includesInCoverage,
+                               List<ExecutionData> packageExecData, CoverageBuilder packageCoverageBuilder,
+                               List<SessionInfo> sessionInfoList)
             throws IOException {
         String orgName = this.module.packageInstance().packageOrg().toString();
         String packageName = this.module.packageInstance().packageName().toString();
@@ -127,15 +131,32 @@ public class CoverageReport {
                        true, includesInCoverage);
                 execFileLoader.load(executionDataFile.toFile());
                 final CoverageBuilder xmlCoverageBuilder = analyzeStructure();
-                // Create XML coverage report for code coverage
-                createXMLReport(getPartialCoverageModifiedBundle(xmlCoverageBuilder));
+                updatePackageLevelCoverage(packageCoverageBuilder, packageExecData, sessionInfoList,
+                        xmlCoverageBuilder);
             } else {
-                createXMLReport(getPartialCoverageModifiedBundle(coverageBuilder));
+                updatePackageLevelCoverage(packageCoverageBuilder, packageExecData, sessionInfoList, coverageBuilder);
             }
             CodeCoverageUtils.deleteDirectory(coverageDir.resolve(BIN_DIR).toFile());
         } else {
             String msg = "Unable to generate code coverage for the module " + packageName + ". Jar files dont exist.";
             throw new NoSuchFileException(msg);
+        }
+    }
+
+    private void updatePackageLevelCoverage(CoverageBuilder packageCoverageBuilder, List<ExecutionData> packageExecData,
+                                            List<SessionInfo> sessionInfoList, CoverageBuilder coverageBuilder) {
+        for (IClassCoverage classCov : coverageBuilder.getClasses()) {
+            try {
+                packageCoverageBuilder.visitCoverage(classCov);
+            } catch (IllegalStateException exception) {
+                continue;
+            }
+        }
+        for (SessionInfo sessionInfo : execFileLoader.getSessionInfoStore().getInfos()) {
+            sessionInfoList.add(sessionInfo);
+        }
+        for (ExecutionData executionData : execFileLoader.getExecutionDataStore().getContents()) {
+            packageExecData.add(executionData);
         }
     }
 
@@ -160,7 +181,7 @@ public class CoverageReport {
     }
 
     private CoverageBuilder analyzeStructure() throws IOException {
-        final CoverageBuilder coverageBuilder = new CoverageBuilder();
+        CoverageBuilder coverageBuilder = new CoverageBuilder();
         final Analyzer analyzer = new Analyzer(execFileLoader.getExecutionDataStore(), coverageBuilder);
         analyzer.analyzeAll(classesDirectory.toFile());
         return coverageBuilder;
