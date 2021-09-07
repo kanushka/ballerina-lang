@@ -32,37 +32,35 @@ public class BallerinaConnectorInfoTest {
     @BeforeClass
     public void initConnectorInfo() {
         connectorInfo = new BallerinaConnectorInfo(
+                "1",
                 "ballerinax",
                 "slack",
+                "0.1.0",
                 "Client",
-                "0.1.1",
-                "1",
-                "Slack",
-                true,
-                "service-connectors"
+                "any",
+                "slbeta2"
         );
     }
 
     @Test(description = "Test version from connector info object")
     public void getVersionTest() {
-        String version = "1";
-        Assert.assertEquals(version, connectorInfo.getCacheVersion());
+        String version = "0.1.0";
+        Assert.assertEquals(version, connectorInfo.getVersion());
     }
 
-    @Test(description = "Test overloaded constructor with logo")
+    @Test(description = "Test overloaded constructor with display name")
     public void createConnectorInfoWithLogo() {
-        String encodedLogo = "bm90aGluZwo=";
+        String displayName = "Slack";
         connectorInfo = new BallerinaConnectorInfo(
+                "1",
                 "ballerinax",
                 "slack",
+                "0.1.0",
                 "Client",
-                "0.1.1",
-                "1",
-                "Slack",
-                encodedLogo,
-                true,
-                "service-connectors"
+                "any",
+                "slbeta2",
+                "Slack"
         );
-        Assert.assertEquals(encodedLogo, connectorInfo.getLogoBase64Encoded());
+        Assert.assertEquals(displayName, connectorInfo.getDisplayName());
     }
 }
